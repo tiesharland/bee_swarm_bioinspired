@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-class Environment():
+class Environment:
     def __init__(self, width, length, nectar_count):
         self.width = width
         self.length = length
@@ -10,8 +10,9 @@ class Environment():
         self.grid = np.zeros((self.width, self.length), dtype=int)
         self.nectar_positions = self.place_nectar()
         self.hive_position = self.place_hive()
+        self.probabilities = [0.1, 0.9]             # Exploration, Following waggle
         self.bees = []
-        self.found_nectars = []
+        self.dances = []
 
     def place_nectar(self):
         empty = list(zip(*np.where(self.grid == 0)))
@@ -32,12 +33,16 @@ class Environment():
     def add_bee(self, bee):
         self.bees.append(bee)
 
+    def add_dance(self, direction):
+        if {'direction': direction} not in self.dances:
+            self.dances.append({'direction': direction})
+
     def update(self):
         self.grid[self.grid == 3] = 0
         for b in self.bees:
             b.update()
-            if b.state == "found":
-                self.found_nectars += b.known_nectar_pos
+            # if b.state == "found":
+            #     self.found_nectars += b.known_nectar_pos
             if b.position != self.hive_position:
                 self.grid[b.position[0], b.position[1]] = 3
 
@@ -51,6 +56,7 @@ class Bee:
         self.found_nectar = False
         self.known_nectar_pos = []
         self.path_history = [(0, 0)]
+        self.target = None
 
     def sense_nectar(self):
         r = self.sense_range
@@ -61,10 +67,20 @@ class Bee:
                 if 0 <= x < self.env.width and 0 <= y < self.env.length:
                     if self.env.grid[x, y] == 1:
                         self.known_nectar_pos.append((x, y))
+                        self.env.grid[x, y] = 4                 # Found nectar
         self.found_nectar = len(self.known_nectar_pos) > 0
 
-    def move(self):
-        if self.state == "searching":
+    def update(self):
+        if self.state == "home":
+            if self.known_nectar_pos:
+                nec = self.known_nectar_pos[np.random.choice(len(self.known_nectar_pos))]
+                direction = (nec[0] - self.position[0], nec[1] - self.position[1])
+                self.env.add_dance(direction)
+                self.known_nectar_pos.clear()
+                self.state = "dancing"
+            else:
+                self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+        elif self.state == "searching":
             self.sense_nectar()
             if self.found_nectar:
                 self.state = "found"
@@ -77,6 +93,8 @@ class Bee:
                 dx, dy = x - self.position[0], y - self.position[1]
                 self.position = (x, y)
                 self.path_history.append((dx, dy))
+        elif self.state == "following":
+            self.target = np.random.choice(self.env.dances)['direction']
         elif self.state == "found":
             if self.position == self.env.hive_position:
                 self.state = "home"
@@ -88,13 +106,10 @@ class Bee:
             if self.position == self.env.hive_position:
                 self.state = "home"
 
-    def update(self):
-        self.move()
-
 
 if __name__ == "__main__":
-    env = Environment(6, 6, 3)
-    for i in range(1):
+    env = Environment(8, 8, 3)
+    for i in range(2):
         b = Bee(env, 1)
         env.add_bee(b)
 
@@ -102,11 +117,14 @@ if __name__ == "__main__":
     n_time_steps = 10
     for t in range(n_time_steps):
         env.update()
-        print(t, env.bees[0].state)
-        if env.bees[0].state == "found":
-            print(env.bees[0].path_history, env.bees[0].position)
+        print(f'------------------------------------------------------')
+        print(f'Time step: {t}\n------------------------------------------------------')
+        print(f'Dances: {env.dances}')
+        for id, b in enumerate(env.bees):
+            print(f'Bee {id}: {b.state}')
+            if b.state == "found":
+                print(f'       Path: {b.path_history}\n       Position: {b.position}')
+            elif b.state == "following":
+                print(b.target)
 
     print(env.grid)
-    print(env.bees[0].known_nectar_pos)
-    print(env.bees[0].path_history)
-    print(env.bees[0].position)
