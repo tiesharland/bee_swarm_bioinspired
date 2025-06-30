@@ -84,7 +84,17 @@ class Bee:
 
     def move(self, random=False):
         if random:
-            angle = np.random.uniform(0, 2 * np.pi)
+            if len(self.path_history) >= 2:
+                last_dx, last_dy = self.path_history[-1]
+                direction_vec = np.array([last_dx, last_dy])
+            else:
+                direction_vec = np.array(self.position) - np.array(self.env.hive_position)
+            if np.linalg.norm(direction_vec) == 0:
+                pref_angle = np.random.uniform(0, 2 * np.pi)
+            else:
+                pref_angle = np.arctan2(direction_vec[1], direction_vec[0])
+            kappa = 4
+            angle = np.random.vonmises(mu=pref_angle, kappa=kappa)
             dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
         elif self.target:
             dx, dy = self.dt * self.target["direction"][0], self.dt * self.target["direction"][1]
@@ -170,8 +180,9 @@ class Bee:
             else:
                 self.state = "returning"
         elif self.state == "returning":
-            self.position = (self.position[0] - self.path_history[-1][0], self.position[1] - self.path_history[-1][1])
-            self.path_history.pop()
+            if self.path_history:
+                self.position = (self.position[0] - self.path_history[-1][0], self.position[1] - self.path_history[-1][1])
+                self.path_history.pop()
             dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
             if dist_to_hive <= self.env.hive_radius:
                 self.state = "home"
