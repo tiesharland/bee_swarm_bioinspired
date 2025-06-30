@@ -1,25 +1,27 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 
 
 class Environment:
-    def __init__(self, width, length, nectar_count):
+    def __init__(self, width, length, hive_radius, nectar_count, max_nec_strength):
         self.width = width
         self.length = length
-        self.nectar_count = nectar_count
-        self.nectar_positions = self.place_nectar()
+        self.hive_radius = hive_radius
+        self.max_nec_strength = max_nec_strength
+        self.nectars = self.place_nectar(nectar_count)
         self.hive_position = self.place_hive()
         self.bees = []
         self.dances = []
         self.probabilities = [0.1, 0.9]             # Exploration, Following waggle
 
-    def place_nectar(self):
-        positions = []
-        for n in range(self.nectar_count):
+    def place_nectar(self, num):
+        nectars = []
+        for n in range(num):
             x = np.random.uniform(0, self.length)
             y = np.random.uniform(0, self.width)
-            positions.append((x, y))
-        return positions
+            nectars.append({'position': (x, y), 'strength': np.random.randint(1, self.max_nec_strength + 1)})
+        return nectars
 
     def place_hive(self):
         return np.random.uniform(0, self.length), np.random.uniform(0, self.width)
@@ -28,8 +30,7 @@ class Environment:
         self.bees.append(bee)
 
     def add_dance(self, direction, distance):
-        if {'direction': direction, 'distance': distance} not in self.dances:
-            self.dances.append({'direction': direction, 'distance': distance})
+        self.dances.append({'direction': direction, 'distance': distance})
 
     def update(self):
         for b in self.bees:
@@ -41,17 +42,21 @@ class Environment:
         ax.set_xlim(0, self.length)
         ax.set_ylim(0, self.width)
 
-        for x, y in self.nectar_positions:
-            ax.scatter(x, y, color='orange', s=100, marker='*', label='Nectar')
+        for nec in self.nectars:
+            x, y = nec['position']
+            s = nec['strength']
+            alph = s / self.max_nec_strength
+            ax.scatter(x, y, color='orange', s=100, alpha=alph, marker='*', label='Nectar')
 
-        hx, hy = self.hive_position
-        ax.scatter(hx, hy, c='gold', s=200, edgecolors='black', label='Hive')
+        hive_circle = patches.Circle(self.hive_position, radius=self.hive_radius,
+                                     facecolor='gold', edgecolor='black', label='Hive')
+        ax.add_patch(hive_circle)
 
         for bee in self.bees:
-            if bee.state != "home":
+            if bee.state not in ['home', 'dancing']:
                 bx, by = bee.position
-                ax.scatter(bx, by, color='black', s=80)
-        fig.show()
+                ax.scatter(bx, by, color='black', s=50)
+        plt.show()
 
 
 class Bee:
@@ -59,89 +64,151 @@ class Bee:
         self.env = environment
         self.sense_range = sense_range
         self.dt = dt
-        self.position = env.hive_position
-        self.state = "searching"
-        self.found_nectar = False
-        self.known_nectar_pos = []
+        self.position = self.env.hive_position
+        self.state = "home"
+        self.dance = 0
+        self.found_nectar = []
+        self.known_nectars = []
         self.path_history = [(0, 0)]
         self.target = None
 
     def sense_nectar(self):
-        px, py = self.position
-        self.known_nectar_pos = []
-        for nx, ny in self.env.nectar_positions:
-            dist = np.sqrt((px - nx) ** 2 + (py - ny) ** 2)
+        new_nectar = []
+        for nec in self.env.nectars:
+            dist = np.linalg.norm(np.array(nec['position']) - np.array(self.position))
             if dist <= self.sense_range:
-                self.known_nectar_pos.append((nx, ny))
-        self.found_nectar = len(self.known_nectar_pos) > 0
-        
-    def move_random(self):
-        angle = np.random.uniform(0, 2 * np.pi)
-        dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
+                if nec not in self.known_nectars:
+                    self.known_nectars.append(nec)
+                    new_nectar.append(nec)
+        self.found_nectar = new_nectar
+
+    def move(self, random=False):
+        if random:
+            angle = np.random.uniform(0, 2 * np.pi)
+            dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
+        elif self.target:
+            dx, dy = self.dt * self.target["direction"][0], self.dt * self.target["direction"][1]
+        else:
+            raise ValueError("Not random (searching) and no target")
         x = np.clip(self.position[0] + dx, 0, self.env.width)
         y = np.clip(self.position[1] + dy, 0, self.env.length)
+        dx_real, dy_real = x - self.position[0], y - self.position[1]
         self.position = (x, y)
-        self.path_history.append((dx, dy))
-        
+        self.path_history.append((dx_real, dy_real))
+
     def update(self):
         if self.state == "following":
             if self.target:
+                dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
                 self.sense_nectar()
                 if self.found_nectar:
                     self.state = "found"
+                    self.target = None
+                elif dist_to_hive >= self.target["distance"] - self.sense_range:
+                    self.target = None
+                    self.state = "returning"
                 else:
-                    dx, dy = self.dt * self.target["direction"][0], self.dt * self.target["direction"][1]
-                    self.position = (self.position[0] + dx, self.position[1] + dy)
+                    self.move()
             elif self.env.dances:
                 self.target = np.random.choice(self.env.dances)
-                self.env.dances.remove(self.target)
                 self.sense_nectar()
                 if self.found_nectar:
                     self.state = "found"
+                    self.target = None
                 else:
-                    dx, dy = self.dt * self.target["direction"][0], self.dt * self.target["direction"][1]
-                    self.position = (self.position[0] + dx, self.position[1] + dy)
+                    self.move()
             else:
                 self.state = "searching"
         elif self.state == "searching":
+            self.target = None
             self.sense_nectar()
             if self.found_nectar:
                 self.state = "found"
             else:
-                self.move_random()
+                self.move(random=True)
         elif self.state == "home":
-            if self.known_nectar_pos:
-                nec = self.known_nectar_pos[np.random.choice(len(self.known_nectar_pos))]
-                dx, dy = nec[0] - self.position[0], nec[1] - self.position[1]
-                distance = np.sqrt(dx ** 2 + dy ** 2)
-                direction = (dx / distance, dy / distance)
-                self.env.add_dance(direction, distance)
-                self.known_nectar_pos.clear()
-                self.state = "dancing"
-            else:
+            if self.known_nectars:
+                nec = np.random.choice(self.known_nectars)
+                vector = np.array(nec['position']) - np.array(self.position)
+                distance = np.linalg.norm(vector)
+                direction = tuple(vector / distance)
+                self.known_nectars.clear()
+                exists = any(np.allclose(d["direction"], direction) and np.isclose(d["distance"], distance)
+                             for d in self.env.dances)
+                if exists:
+                    self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+                else:
+                    self.env.add_dance(direction, distance)
+                    self.state = "dancing"
+                    self.target = {'direction': direction, 'distance': distance}
+                    self.dance = 1
+            elif self.env.dances:
                 self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+            else:
+                self.state = "searching"
         elif self.state == "found":
-            if self.position == self.env.hive_position:
-                self.state = "dancing"
+            nec = None
+            for n in self.found_nectar:
+                vector = np.array(n['position']) - np.array(self.position)
+                distance = np.linalg.norm(vector)
+                direction = vector / distance
+                if self.target and np.allclose(direction, self.target["direction"]):
+                    nec = n
+                    break
+            if nec is None:
+                nec = np.random.choice(self.found_nectar)
+            nec['strength'] -= 1
+            if nec['strength'] <= 0:
+                for n in self.env.nectars:
+                    if np.allclose(n["position"], nec["position"]):
+                        self.env.nectars.remove(n)
+            dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
+            if dist_to_hive <= self.env.hive_radius:
+                self.state = "home"
+                self.position = self.env.hive_position
+                self.path_history.clear()
             else:
                 self.state = "returning"
         elif self.state == "returning":
-            self.position = (self.position[0] - self.dt * self.path_history[-1][0],
-                             self.position[1] - self.dt * self.path_history[-1][1])
+            self.position = (self.position[0] - self.path_history[-1][0], self.position[1] - self.path_history[-1][1])
             self.path_history.pop()
-            dist = np.sqrt((self.position[0] - self.env.hive_position[0]) ** 2
-                            + (self.position[1] - self.env.hive_position[1]) ** 2)
-            if dist <= self.sense_range:
+            dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
+            if dist_to_hive <= self.env.hive_radius:
                 self.state = "home"
                 self.position = self.env.hive_position
+                self.path_history.clear()
+        elif self.state == "dancing":
+            if self.dance > 4:
+                if self.env.dances:
+                    for dance in self.env.dances:
+                        if (np.allclose(dance["direction"], self.target["direction"]) and
+                                np.isclose(dance["distance"], self.target["distance"])):
+                            self.env.dances.remove(dance)
+                            # self.target = None
+                    self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+                else:
+                    self.state = "searching"
+                self.dance = 0
+                # if self.target:
+                #     for dance in self.env.dances:
+                #         if (np.allclose(dance["direction"], self.target["direction"]) and
+                #                 np.isclose(dance["distance"], self.target["distance"])):
+                #             self.env.dances.remove(dance)
+            else:
+                self.dance += 1
 
 
 if __name__ == "__main__":
+    width = 4
+    length = 4
+    hive_radius = 0.2
+    max_nec_strength = 4
+    nectar_count = 3
+    S = 1
     dt = 0.1
     n_time_steps = 100
-    S = 1
 
-    env = Environment(4, 4, 3)
+    env = Environment(width, length, hive_radius, max_nec_strength, nectar_count)
     for i in range(2):
         b = Bee(env, S, dt)
         env.add_bee(b)
@@ -155,8 +222,9 @@ if __name__ == "__main__":
         print(f'Dances: {env.dances}')
         for id, b in enumerate(env.bees):
             print(f'Bee {id}: {b.state}')
+            print(f'       Target: {b.target}')
             if b.state == "found":
-                print(f'       Path: {b.path_history}\n       Position: {b.position}')
-            elif b.state == "following":
-                print(b.target)
+                print(f'       Position: {b.position}')
+            # elif b.state == "following":
+            #     print(f'       Target: {b.target}')
         env.visualise(t)
