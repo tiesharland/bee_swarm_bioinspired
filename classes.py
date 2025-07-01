@@ -69,7 +69,7 @@ class Bee:
         self.dance = 0
         self.found_nectar = []
         self.known_nectars = []
-        self.path_history = [(0, 0)]
+        self.path_history = [self.position]
         self.target = None
 
     def sense_nectar(self):
@@ -85,15 +85,34 @@ class Bee:
     def move(self, random=False):
         if random:
             if len(self.path_history) >= 2:
-                last_dx, last_dy = self.path_history[-1]
-                direction_vec = np.array([last_dx, last_dy])
+                last_x, last_y = self.path_history[-1]
+                x, y = self.position
+                direction_vec = np.array([x - last_x, y - last_y])
             else:
                 direction_vec = np.array(self.position) - np.array(self.env.hive_position)
-            if np.linalg.norm(direction_vec) == 0:
+            if np.linalg.norm(direction_vec) > 0:
+                direction_vec = direction_vec / np.linalg.norm(direction_vec)
+            else:
+                direction_vec = np.zeros(2)
+            repulsion_vec = np.zeros(2)
+            margin = 0.3
+            if self.position[0] < margin:
+                repulsion_vec[0] += 1
+            elif self.position[0] > self.env.length - margin:
+                repulsion_vec[0] -= 1
+            if self.position[1] < margin:
+                repulsion_vec[1] += 1
+            elif self.position[1] > self.env.width - margin:
+                repulsion_vec[1] -= 1
+            if np.linalg.norm(repulsion_vec) > 0:
+                repulsion_vec = repulsion_vec / np.linalg.norm(repulsion_vec)
+            combined_vec = 0.3 * direction_vec + 0.7 * repulsion_vec
+            if np.linalg.norm(combined_vec) == 0:
                 pref_angle = np.random.uniform(0, 2 * np.pi)
             else:
-                pref_angle = np.arctan2(direction_vec[1], direction_vec[0])
-            kappa = 4
+                pref_angle = np.arctan2(combined_vec[1], combined_vec[0])
+            distance_from_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
+            kappa = 4 + 11 * np.exp(-distance_from_hive / 2.0)
             angle = np.random.vonmises(mu=pref_angle, kappa=kappa)
             dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
         elif self.target:
@@ -102,9 +121,9 @@ class Bee:
             raise ValueError("Not random (searching) and no target")
         x = np.clip(self.position[0] + dx, 0, self.env.width)
         y = np.clip(self.position[1] + dy, 0, self.env.length)
-        dx_real, dy_real = x - self.position[0], y - self.position[1]
+        # dx_real, dy_real = x - self.position[0], y - self.position[1]
         self.position = (x, y)
-        self.path_history.append((dx_real, dy_real))
+        self.path_history.append(self.position)
 
     def update(self):
         if self.state == "following":
@@ -129,8 +148,8 @@ class Bee:
                     self.move()
             else:
                 self.state = "searching"
+                self.target = None
         elif self.state == "searching":
-            self.target = None
             self.sense_nectar()
             if self.found_nectar:
                 self.state = "found"
@@ -147,6 +166,8 @@ class Bee:
                              for d in self.env.dances)
                 if exists:
                     self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+                    if self.state == "searching":
+                        self.target = None
                 else:
                     self.env.add_dance(direction, distance)
                     self.state = "dancing"
@@ -154,8 +175,11 @@ class Bee:
                     self.dance = 1
             elif self.env.dances:
                 self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+                if self.state == "searching":
+                    self.target = None
             else:
                 self.state = "searching"
+                self.target = None
         elif self.state == "found":
             nec = None
             for n in self.found_nectar:
@@ -180,14 +204,19 @@ class Bee:
             else:
                 self.state = "returning"
         elif self.state == "returning":
-            if self.path_history:
-                self.position = (self.position[0] - self.path_history[-1][0], self.position[1] - self.path_history[-1][1])
-                self.path_history.pop()
-            dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
+            # if self.path_history:
+            #     self.position = (self.path_history[-1][0], self.path_history[-1][1])
+            #     self.path_history.pop()
+            vec_to_home = np.array(self.env.hive_position) - np.array(self.position)
+            dist_to_hive = np.linalg.norm(vec_to_home)
+            vec_to_home = tuple(vec_to_home / dist_to_hive)
             if dist_to_hive <= self.env.hive_radius:
                 self.state = "home"
                 self.position = self.env.hive_position
                 self.path_history.clear()
+            else:
+                self.position = (self.position[0] + self.dt * vec_to_home[0], self.position[1] + self.dt * vec_to_home[1])
+                self.path_history.append(self.position)
         elif self.state == "dancing":
             if self.dance > 4:
                 if self.env.dances:
@@ -197,8 +226,11 @@ class Bee:
                             self.env.dances.remove(dance)
                             # self.target = None
                     self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
+                    if self.state == "searching":
+                        self.target = None
                 else:
                     self.state = "searching"
+                    self.target = None
                 self.dance = 0
                 # if self.target:
                 #     for dance in self.env.dances:
@@ -215,13 +247,13 @@ if __name__ == "__main__":
     hive_radius = 0.2
     max_nec_strength = 4
     nectar_count = 3
-    S = 1
+    sense_range = .5
     dt = 0.1
-    n_time_steps = 100
+    n_time_steps = 250
 
     env = Environment(width, length, hive_radius, max_nec_strength, nectar_count)
     for i in range(2):
-        b = Bee(env, S, dt)
+        b = Bee(env, sense_range, dt)
         env.add_bee(b)
 
     env.visualise(0)
