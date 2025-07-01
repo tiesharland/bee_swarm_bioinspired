@@ -178,19 +178,18 @@ class Bee:
                     self.state = "dancing"
                     self.target = {'direction': direction, 'distance': distance}
                     self.dance = 1
-            elif not self.env.dances:
-                if np.random.rand() > self.env.idle_prob:
-                    self.state = "searching"
-                    self.target = None
             else:
-                self.state = np.random.choice(["idle", "following", "searching"],
-                                              p=[self.env.idle_prob, self.env.follow_prob,
-                                                 1 - self.env.idle_prob - self.env.follow_prob])
+                self.state = np.random.choice(["home", "following", "searching"],
+                                                  p=[self.env.idle_prob, self.env.follow_prob,
+                                                     1 - self.env.idle_prob - self.env.follow_prob])
                 if self.state == "searching":
                     self.target = None
                 elif self.state == "following":
                     if not self.target:
-                        self.target = np.random.choice(self.env.dances)
+                        if self.env.dances:
+                            self.target = np.random.choice(self.env.dances)
+                        else:
+                            self.state = "searching"
         elif self.state == "found":
             nec = None
             for n in self.found_nectar:
@@ -257,15 +256,16 @@ if __name__ == "__main__":
     sense_range = .5
     dt = 0.1
     n_time_steps = 1000
+    max_steps = 5000
 
     env = Environment(width, length, hive_radius, max_nec_strength, nectar_count)
     for i in range(num_bees):
         b = Bee(env, sense_range, dt)
         env.add_bee(b)
 
-    env.visualise(0)
-
-    for t in range(1, n_time_steps + 1):
+    t = 0
+    env.visualise(t)
+    while len(env.nectars) > 0 and t <= max_steps:
         env.update()
         print(f'------------------------------------------------------')
         print(f'Time step: {t}\n------------------------------------------------------')
@@ -278,3 +278,26 @@ if __name__ == "__main__":
             # elif b.state == "following":
             #     print(f'       Target: {b.target}')
         env.visualise(t)
+        t += 1
+
+    print(
+        f'------------------------------------------------------'
+        f'\n------------------------------------------------------')
+
+    if len(env.nectars) > 0:
+        print(f'Not all nectars found in {max_steps} time steps.\nThere are {len(env.nectars)} nectars remaining.')
+    else:
+        print(f'Iterations needed for finding all nectars: {t} time steps')
+    # for t in range(1, n_time_steps + 1):
+    #     env.update()
+    #     print(f'------------------------------------------------------')
+    #     print(f'Time step: {t}\n------------------------------------------------------')
+    #     print(f'Dances: {env.dances}')
+    #     for id, b in enumerate(env.bees):
+    #         print(f'Bee {id}: {b.state}')
+    #         print(f'       Target: {b.target}')
+    #         if b.state == "found":
+    #             print(f'       Position: {b.position}')
+    #         # elif b.state == "following":
+    #         #     print(f'       Target: {b.target}')
+    #     env.visualise(t)
