@@ -13,7 +13,8 @@ class Environment:
         self.hive_position = self.place_hive()
         self.bees = []
         self.dances = []
-        self.probabilities = [0.1, 0.9]             # Exploration, Following waggle
+        self.idle_prob = 0.1
+        self.follow_prob = 0.8
 
     def place_nectar(self, num):
         nectars = []
@@ -95,7 +96,7 @@ class Bee:
             else:
                 direction_vec = np.zeros(2)
             repulsion_vec = np.zeros(2)
-            margin = 0.3
+            margin = self.sense_range
             if self.position[0] < margin:
                 repulsion_vec[0] += 1
             elif self.position[0] > self.env.length - margin:
@@ -106,13 +107,14 @@ class Bee:
                 repulsion_vec[1] -= 1
             if np.linalg.norm(repulsion_vec) > 0:
                 repulsion_vec = repulsion_vec / np.linalg.norm(repulsion_vec)
-            combined_vec = 0.3 * direction_vec + 0.7 * repulsion_vec
-            if np.linalg.norm(combined_vec) == 0:
-                pref_angle = np.random.uniform(0, 2 * np.pi)
-            else:
+            combined_vec = 0.5 * direction_vec + 0.5 * repulsion_vec
+            if np.linalg.norm(combined_vec) > 0:
+                combined_vec = combined_vec / np.linalg.norm(combined_vec)
                 pref_angle = np.arctan2(combined_vec[1], combined_vec[0])
+            else:
+                pref_angle = np.random.uniform(0, 2 * np.pi)
             distance_from_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
-            kappa = 4 + 11 * np.exp(-distance_from_hive / 2.0)
+            kappa = 10 + 10 * np.exp(-distance_from_hive / 20)
             angle = np.random.vonmises(mu=pref_angle, kappa=kappa)
             dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
         elif self.target:
@@ -134,8 +136,8 @@ class Bee:
                     self.state = "found"
                     self.target = None
                 elif dist_to_hive >= self.target["distance"] - self.sense_range:
+                    self.state = "searching"
                     self.target = None
-                    self.state = "returning"
                 else:
                     self.move()
             elif self.env.dances:
@@ -151,8 +153,15 @@ class Bee:
                 self.target = None
         elif self.state == "searching":
             self.sense_nectar()
+            dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
             if self.found_nectar:
                 self.state = "found"
+            elif dist_to_hive <= self.env.hive_radius:
+                if self.env.dances:
+                    self.state = "following"
+                    self.target = np.random.choice(self.env.dances)
+                else:
+                    self.move(random=True)
             else:
                 self.move(random=True)
         elif self.state == "home":
@@ -164,22 +173,24 @@ class Bee:
                 self.known_nectars.clear()
                 exists = any(np.allclose(d["direction"], direction) and np.isclose(d["distance"], distance)
                              for d in self.env.dances)
-                if exists:
-                    self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
-                    if self.state == "searching":
-                        self.target = None
-                else:
+                if not exists:
                     self.env.add_dance(direction, distance)
                     self.state = "dancing"
                     self.target = {'direction': direction, 'distance': distance}
                     self.dance = 1
-            elif self.env.dances:
-                self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
-                if self.state == "searching":
+            elif not self.env.dances:
+                if np.random.rand() > self.env.idle_prob:
+                    self.state = "searching"
                     self.target = None
             else:
-                self.state = "searching"
-                self.target = None
+                self.state = np.random.choice(["idle", "following", "searching"],
+                                              p=[self.env.idle_prob, self.env.follow_prob,
+                                                 1 - self.env.idle_prob - self.env.follow_prob])
+                if self.state == "searching":
+                    self.target = None
+                elif self.state == "following":
+                    if not self.target:
+                        self.target = np.random.choice(self.env.dances)
         elif self.state == "found":
             nec = None
             for n in self.found_nectar:
@@ -225,12 +236,7 @@ class Bee:
                                 np.isclose(dance["distance"], self.target["distance"])):
                             self.env.dances.remove(dance)
                             # self.target = None
-                    self.state = np.random.choice(["searching", "following"], p=self.env.probabilities)
-                    if self.state == "searching":
-                        self.target = None
-                else:
-                    self.state = "searching"
-                    self.target = None
+                self.state = "home"
                 self.dance = 0
                 # if self.target:
                 #     for dance in self.env.dances:
@@ -247,12 +253,13 @@ if __name__ == "__main__":
     hive_radius = 0.2
     max_nec_strength = 4
     nectar_count = 3
+    num_bees = 4
     sense_range = .5
     dt = 0.1
-    n_time_steps = 250
+    n_time_steps = 1000
 
     env = Environment(width, length, hive_radius, max_nec_strength, nectar_count)
-    for i in range(2):
+    for i in range(num_bees):
         b = Bee(env, sense_range, dt)
         env.add_bee(b)
 
