@@ -1,20 +1,24 @@
 import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+import matplotlib.animation as animation
 
 
 class Environment:
-    def __init__(self, width, length, hive_radius, nectar_count, max_nec_strength):
+    def __init__(self, width, length, hive_radius, nectar_count, max_nec_strength, idle_prob, follow_prob):
         self.width = width
         self.length = length
         self.hive_radius = hive_radius
         self.max_nec_strength = max_nec_strength
+        self.idle_prob = idle_prob
+        self.follow_prob = follow_prob
         self.nectars = self.place_nectar(nectar_count)
         self.hive_position = self.place_hive()
         self.bees = []
         self.dances = []
-        self.idle_prob = 0.1
-        self.follow_prob = 0.8
+        self.history = []
 
     def place_nectar(self, num):
         nectars = []
@@ -36,8 +40,59 @@ class Environment:
     def update(self):
         for b in self.bees:
             b.update()
+        self.record_state()
 
-    def visualise(self, step):
+    def record_state(self):
+        bee_data = [{'position': bee.position, 'state': bee.state} for bee in self.bees]
+        nectar_data = [{'position': nectar['position'], 'strength': nectar['strength']} for nectar in self.nectars]
+        self.history.append({'bee_data': bee_data, 'nectar_data': nectar_data})
+
+    def visualise(self, fps=30, filename=None):
+        fig, ax = plt.subplots(1, 1)
+        ax.set_xlim(0, self.length)
+        ax.set_ylim(0, self.width)
+        ax.set_title(f'Bee swarm foraging')
+
+        bee_scat = ax.scatter([], [], color='black', s=50)
+        nectar_scat = ax.scatter([], [], color='orange', marker='*', s=100)
+        hive_circle = patches.Circle(self.hive_position, radius=self.hive_radius,
+                                     facecolor='gold', edgecolor='black', label='Hive')
+        ax.add_patch(hive_circle)
+
+        def init():
+            bee_scat.set_offsets(np.empty((0, 2)))
+            nectar_scat.set_offsets(np.empty((0, 2)))
+            nectar_scat.set_alpha(0)
+            return [bee_scat, nectar_scat, hive_circle]
+
+        def update(frame):
+            bee_positions = [b['position'] for b in self.history[frame]['bee_data']]
+            bee_scat.set_offsets(np.array(bee_positions))
+
+            nectar_positions = []
+            nectar_alphas = []
+            for nec in self.history[frame]['nectar_data']:
+                nectar_positions.append(nec['position'])
+                strength = nec['strength']
+                nectar_alphas.append(np.clip(strength / self.max_nec_strength, 0, 1))
+
+            if nectar_positions:
+                nectar_scat.set_offsets(np.array(nectar_positions))
+                nectar_scat.set_alpha(nectar_alphas)
+            else:
+                # safely reset to empty without touching alpha
+                nectar_scat.set_offsets(np.empty((0, 2)))
+
+            return [bee_scat, nectar_scat]
+
+        ani = animation.FuncAnimation(fig, update, init_func=init, frames=len(self.history), interval=1000/fps, blit=False)
+
+        if filename:
+            ani.save(filename)
+
+        plt.show()
+
+    def plot_grid(self, step):
         fig, ax = plt.subplots(1, 1)
         ax.set_title(f'Bee swarm - step {step}' if step is not None else 'Bee swarm')
         ax.set_xlim(0, self.length)
@@ -251,6 +306,8 @@ if __name__ == "__main__":
     length = 4
     hive_radius = 0.2
     max_nec_strength = 4
+    idle_prob = 0.1
+    follow_prob = 0.8
     nectar_count = 3
     num_bees = 4
     sense_range = .5
@@ -258,26 +315,28 @@ if __name__ == "__main__":
     n_time_steps = 1000
     max_steps = 5000
 
-    env = Environment(width, length, hive_radius, max_nec_strength, nectar_count)
+    filename = 'swarm_test'
+
+    env = Environment(width, length, hive_radius, max_nec_strength, nectar_count, idle_prob, follow_prob)
     for i in range(num_bees):
         b = Bee(env, sense_range, dt)
         env.add_bee(b)
 
     t = 0
-    env.visualise(t)
+    # env.plot_grid(t)
     while len(env.nectars) > 0 and t <= max_steps:
         env.update()
-        print(f'------------------------------------------------------')
-        print(f'Time step: {t}\n------------------------------------------------------')
-        print(f'Dances: {env.dances}')
-        for id, b in enumerate(env.bees):
-            print(f'Bee {id}: {b.state}')
-            print(f'       Target: {b.target}')
-            if b.state == "found":
-                print(f'       Position: {b.position}')
-            # elif b.state == "following":
-            #     print(f'       Target: {b.target}')
-        env.visualise(t)
+        # print(f'------------------------------------------------------')
+        # print(f'Time step: {t}\n------------------------------------------------------')
+        # print(f'Dances: {env.dances}')
+        # for id, b in enumerate(env.bees):
+        #     print(f'Bee {id}: {b.state}')
+        #     print(f'       Target: {b.target}')
+        #     if b.state == "found":
+        #         print(f'       Position: {b.position}')
+        #     # elif b.state == "following":
+        #     #     print(f'       Target: {b.target}')
+        # env.plot_grid(t)
         t += 1
 
     print(
@@ -288,6 +347,12 @@ if __name__ == "__main__":
         print(f'Not all nectars found in {max_steps} time steps.\nThere are {len(env.nectars)} nectars remaining.')
     else:
         print(f'Iterations needed for finding all nectars: {t} time steps')
+
+    print(f'Number of recorded frames: {len(env.history)}')
+    env.visualise(
+        
+    )
+
     # for t in range(1, n_time_steps + 1):
     #     env.update()
     #     print(f'------------------------------------------------------')
