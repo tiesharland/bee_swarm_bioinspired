@@ -317,7 +317,7 @@ if __name__ == "__main__":
 
     filename = 'swarm_test'
 
-    env = Environment(width, length, hive_radius, max_nec_strength, nectar_count, idle_prob, follow_prob)
+    env = Environment(width, length, hive_radius, nectar_count, max_nec_strength, idle_prob, follow_prob)
     for i in range(num_bees):
         b = Bee(env, sense_range, dt)
         env.add_bee(b)
@@ -349,9 +349,7 @@ if __name__ == "__main__":
         print(f'Iterations needed for finding all nectars: {t} time steps')
 
     print(f'Number of recorded frames: {len(env.history)}')
-    env.visualise(
-        
-    )
+    env.visualise()
 
     # for t in range(1, n_time_steps + 1):
     #     env.update()
