@@ -35,10 +35,10 @@ if __name__ == '__main__':
     inp['width'] = 4
     inp['length'] = 4
     inp['hive_radius'] = 0.2
-    inp['max_nec_strength'] = 4
-    inp['idle_prob'] = 0.1
-    inp['follow_prob'] = 0.8
-    inp['nectar_count'] = 20
+    inp['max_nec_strength'] = 50
+    inp['idle_prob'] = 0.5
+    inp['follow_prob'] = 0.4
+    inp['nectar_count'] = 15
     inp['num_bees'] = 10
     inp['sense_range'] = .5
     inp['dt'] = 0.1
