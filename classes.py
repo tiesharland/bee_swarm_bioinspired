@@ -34,8 +34,8 @@ class Environment:
     def add_bee(self, bee):
         self.bees.append(bee)
 
-    def add_dance(self, direction, distance):
-        self.dances.append({'direction': direction, 'distance': distance})
+    def add_dance(self, direction, distance, strength):
+        self.dances.append({'direction': direction, 'distance': distance, 'strength': strength})
 
     def update(self):
         for b in self.bees:
@@ -51,7 +51,8 @@ class Environment:
         fig, ax = plt.subplots(1, 1)
         ax.set_xlim(0, self.length)
         ax.set_ylim(0, self.width)
-        ax.set_title(f'Bee swarm foraging')
+
+        title = ax.set_title(f'Bee swarm foraging')
 
         bee_scat = ax.scatter([], [], color='black', s=50)
         nectar_scat = ax.scatter([], [], color='orange', marker='*', s=100)
@@ -63,10 +64,11 @@ class Environment:
             bee_scat.set_offsets(np.empty((0, 2)))
             nectar_scat.set_offsets(np.empty((0, 2)))
             nectar_scat.set_alpha(0)
-            return [bee_scat, nectar_scat, hive_circle]
+            return [bee_scat, nectar_scat, hive_circle, title]
 
         def update(frame):
             bee_positions = [b['position'] for b in self.history[frame]['bee_data']]
+            bee_states = [b['state'] for b in self.history[frame]['bee_data']]
             bee_scat.set_offsets(np.array(bee_positions))
 
             nectar_positions = []
@@ -83,7 +85,13 @@ class Environment:
                 # safely reset to empty without touching alpha
                 nectar_scat.set_offsets(np.empty((0, 2)))
 
-            return [bee_scat, nectar_scat]
+            bees_in_hive = sum(np.linalg.norm(np.array(pos) - np.array(self.hive_position)) <= self.hive_radius
+                               for pos in bee_positions)
+
+            # Update the title
+            title.set_text(f"Bee swarm foraging - Bees in hive: {bees_in_hive}")
+
+            return [bee_scat, nectar_scat, title]
 
         ani = animation.FuncAnimation(fig, update, init_func=init, frames=len(self.history), interval=1000/fps, blit=False)
 
@@ -229,9 +237,10 @@ class Bee:
                 exists = any(np.allclose(d["direction"], direction) and np.isclose(d["distance"], distance)
                              for d in self.env.dances)
                 if not exists:
-                    self.env.add_dance(direction, distance)
+                    strength = nec["strength"]
+                    self.env.add_dance(direction, distance, strength)
                     self.state = "dancing"
-                    self.target = {'direction': direction, 'distance': distance}
+                    self.target = {'direction': direction, 'distance': distance, 'strength': strength}
                     self.dance = 1
             else:
                 self.state = np.random.choice(["home", "following", "searching"],
@@ -274,16 +283,16 @@ class Bee:
             #     self.path_history.pop()
             vec_to_home = np.array(self.env.hive_position) - np.array(self.position)
             dist_to_hive = np.linalg.norm(vec_to_home)
-            vec_to_home = tuple(vec_to_home / dist_to_hive)
             if dist_to_hive <= self.env.hive_radius:
                 self.state = "home"
                 self.position = self.env.hive_position
                 self.path_history.clear()
             else:
+                vec_to_home = tuple(vec_to_home / dist_to_hive)
                 self.position = (self.position[0] + self.dt * vec_to_home[0], self.position[1] + self.dt * vec_to_home[1])
                 self.path_history.append(self.position)
         elif self.state == "dancing":
-            if self.dance > 4:
+            if self.dance > self.target['strength']:
                 if self.env.dances:
                     for dance in self.env.dances:
                         if (np.allclose(dance["direction"], self.target["direction"]) and

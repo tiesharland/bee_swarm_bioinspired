@@ -21,7 +21,8 @@ def run(inpt, vis=True):
             look_first_nect = False
 
     if len(env.nectars) > 0:
-        print(f'Not all nectars found in {inpt['max_steps']} time steps.\nThere are {len(env.nectars)} nectars remaining.')
+        print(f'Not all nectar sources depleted in {inpt['max_steps']} time steps.'
+              f'\nThere are {len(env.nectars)} nectar sources remaining.')
     else:
         print(f'Iterations needed for finding all nectars: {t} time steps')
 
@@ -32,17 +33,16 @@ def run(inpt, vis=True):
 
 if __name__ == '__main__':
     inp = dict()
-    inp['width'] = 4
-    inp['length'] = 4
+    inp['width'] = 10
+    inp['length'] = 10
     inp['hive_radius'] = 0.2
-    inp['max_nec_strength'] = 50
-    inp['idle_prob'] = 0.5
-    inp['follow_prob'] = 0.4
+    inp['max_nec_strength'] = 5
+    inp['idle_prob'] = 0.9
+    inp['follow_prob'] = 0.08
     inp['nectar_count'] = 15
     inp['num_bees'] = 10
     inp['sense_range'] = .5
-    inp['dt'] = 0.1
-    inp['n_time_steps'] = 1000
+    inp['dt'] = 0.2
     inp['max_steps'] = 5000
 
     run(inp)
