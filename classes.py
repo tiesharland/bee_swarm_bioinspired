@@ -55,7 +55,7 @@ class Environment:
         title = ax.set_title(f'Bee swarm foraging')
 
         bee_scat = ax.scatter([], [], color='black', s=50)
-        nectar_scat = ax.scatter([], [], color='orange', marker='*', s=100)
+        nectar_scat = ax.scatter([], [], color='orange', marker='*', s=100, alpha=0.0)
         hive_circle = patches.Circle(self.hive_position, radius=self.hive_radius,
                                      facecolor='gold', edgecolor='black', label='Hive')
         ax.add_patch(hive_circle)
@@ -124,10 +124,16 @@ class Environment:
 
 
 class Bee:
-    def __init__(self, environment, sense_range, dt):
+    def __init__(self, environment, sense_range, dt, kappa_min, alpha, beta, w_dir, w_rep, scout=False):
         self.env = environment
         self.sense_range = sense_range
         self.dt = dt
+        self.kappa_min = kappa_min
+        self.alpha = alpha
+        self.beta = beta
+        self.w_dir = w_dir
+        self.w_rep = w_rep
+        self.scout = scout
         self.position = self.env.hive_position
         self.state = "home"
         self.dance = 0
@@ -170,14 +176,14 @@ class Bee:
                 repulsion_vec[1] -= 1
             if np.linalg.norm(repulsion_vec) > 0:
                 repulsion_vec = repulsion_vec / np.linalg.norm(repulsion_vec)
-            combined_vec = 0.5 * direction_vec + 0.5 * repulsion_vec
+            combined_vec = self.w_dir * direction_vec + self.w_rep * repulsion_vec
             if np.linalg.norm(combined_vec) > 0:
                 combined_vec = combined_vec / np.linalg.norm(combined_vec)
                 pref_angle = np.arctan2(combined_vec[1], combined_vec[0])
             else:
                 pref_angle = np.random.uniform(0, 2 * np.pi)
             distance_from_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
-            kappa = 10 + 10 * np.exp(-distance_from_hive / 20)
+            kappa = self.kappa_min + self.alpha * np.exp(-distance_from_hive / self.beta)
             angle = np.random.vonmises(mu=pref_angle, kappa=kappa)
             dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
         elif self.target:
@@ -199,7 +205,7 @@ class Bee:
                     self.state = "found"
                     self.target = None
                 elif dist_to_hive >= self.target["distance"] - self.sense_range:
-                    self.state = "searching"
+                    self.state = ("searching" if self.scout else "returning")
                     self.target = None
                 else:
                     self.move()
@@ -212,7 +218,7 @@ class Bee:
                 else:
                     self.move()
             else:
-                self.state = "searching"
+                self.state = ("searching" if self.scout else "returning")
                 self.target = None
         elif self.state == "searching":
             self.sense_nectar()
@@ -242,18 +248,27 @@ class Bee:
                     self.state = "dancing"
                     self.target = {'direction': direction, 'distance': distance, 'strength': strength}
                     self.dance = 1
+            elif self.target:
+                self.state = "following"
             else:
-                self.state = np.random.choice(["home", "following", "searching"],
-                                                  p=[self.env.idle_prob, self.env.follow_prob,
-                                                     1 - self.env.idle_prob - self.env.follow_prob])
-                if self.state == "searching":
-                    self.target = None
-                elif self.state == "following":
-                    if not self.target:
-                        if self.env.dances:
-                            self.target = np.random.choice(self.env.dances)
-                        else:
-                            self.state = "searching"
+                if self.scout and np.random.rand() > self.env.idle_prob:
+                    self.state = "searching"
+                else:
+                    if self.env.dances and np.random.rand() < self.env.follow_prob:
+                        self.state = "following"
+                        self.target = np.random.choice(self.env.dances)
+
+                # self.state = np.random.choice(["home", "following", "searching"],
+                #                                   p=[self.env.idle_prob, self.env.follow_prob,
+                #                                      1 - self.env.idle_prob - self.env.follow_prob])
+                # if self.state == "searching":
+                #     self.target = None
+                # elif self.state == "following":
+                #     if not self.target:
+                #         if self.env.dances:
+                #             self.target = np.random.choice(self.env.dances)
+                #         else:
+                #             self.state = "searching"
         elif self.state == "found":
             nec = None
             for n in self.found_nectar:
