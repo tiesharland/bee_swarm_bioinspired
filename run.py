@@ -9,7 +9,7 @@ def run(inpt, vis=True):
         sc = False
         if i < num_scouts:
             sc = True
-        b = Bee(env, inpt['sense_range'], inpt['dt'], inpt['kappa_min'], inpt['alpha'], inpt['beta'],
+        b = Bee(env, inpt['sense_range'], inpt['dt'], inpt['kappa_0'], inpt['alpha'], inpt['beta'],
                 inpt['w_dir'], inpt['w_rep'], scout=sc)
         env.add_bee(b)
 
@@ -37,23 +37,26 @@ def run(inpt, vis=True):
 
 
 if __name__ == '__main__':
-    inp = dict()
-    inp['width'] = 10
-    inp['length'] = 10
-    inp['hive_radius'] = 0.2
-    inp['max_nec_strength'] = 5
-    inp['idle_prob'] = 0.2
-    inp['follow_prob'] = 0.5
-    inp['nectar_count'] = 15
-    inp['num_bees'] = 20
-    inp['perc_scouts'] = .3
-    inp['sense_range'] = .5
-    inp['kappa_min'] = 10
-    inp['alpha'] = 10
-    inp['beta'] = 20
-    inp['w_dir'] = 0.5
-    inp['w_rep'] = 0.5
-    inp['dt'] = 0.2
-    inp['max_steps'] = 10000
+    inp = {
+        'width': 10,
+        'length': 10,
+        'hive_radius': 0.2,
+        'nectar_count': 15,
+        'max_nec_strength': 5,
+        'num_bees': 10,
+        'dt': 0.2,
+        'max_steps': 10000,
+        # behavioural defaults:
+        'idle_prob': 0.2,
+        'follow_prob': 0.5,
+        'perc_scouts': 0.3,
+        'sense_range': 0.5,
+        # movement params (for kappa etc)
+        'kappa_0': 10,
+        'alpha': 10,
+        'beta': 20,
+        'w_dir': 0.5,
+        'w_rep': 0.5,
+    }
 
     run(inp)

@@ -124,11 +124,11 @@ class Environment:
 
 
 class Bee:
-    def __init__(self, environment, sense_range, dt, kappa_min, alpha, beta, w_dir, w_rep, scout=False):
+    def __init__(self, environment, sense_range, dt, kappa_0, alpha, beta, w_dir, w_rep, scout=False):
         self.env = environment
         self.sense_range = sense_range
         self.dt = dt
-        self.kappa_min = kappa_min
+        self.kappa_0 = kappa_0
         self.alpha = alpha
         self.beta = beta
         self.w_dir = w_dir
@@ -183,7 +183,7 @@ class Bee:
             else:
                 pref_angle = np.random.uniform(0, 2 * np.pi)
             distance_from_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
-            kappa = self.kappa_min + self.alpha * np.exp(-distance_from_hive / self.beta)
+            kappa = self.kappa_0 + self.alpha * np.exp(-distance_from_hive / self.beta)
             angle = np.random.vonmises(mu=pref_angle, kappa=kappa)
             dx, dy = self.dt * np.cos(angle), self.dt * np.sin(angle)
         elif self.target:
