@@ -40,6 +40,7 @@ class Environment:
     def update(self):
         for b in self.bees:
             b.update()
+        self.nectars = [n for n in self.nectars if n['strength'] > 0]
         self.record_state()
 
     def record_state(self):
@@ -281,10 +282,6 @@ class Bee:
             if nec is None:
                 nec = np.random.choice(self.found_nectar)
             nec['strength'] -= 1
-            if nec['strength'] <= 0:
-                for n in self.env.nectars:
-                    if np.allclose(n["position"], nec["position"]):
-                        self.env.nectars.remove(n)
             dist_to_hive = np.linalg.norm(np.array(self.position) - np.array(self.env.hive_position))
             if dist_to_hive <= self.env.hive_radius:
                 self.state = "home"
