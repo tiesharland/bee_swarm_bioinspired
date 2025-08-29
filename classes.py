@@ -338,12 +338,15 @@ if __name__ == "__main__":
     dt = 0.1
     n_time_steps = 1000
     max_steps = 5000
-
+    kappa_0 = 10
+    alpha = 10
+    beta = 20
+    w_dir = 0.5
     filename = 'swarm_test'
 
     env = Environment(width, length, hive_radius, nectar_count, max_nec_strength, idle_prob, follow_prob)
     for i in range(num_bees):
-        b = Bee(env, sense_range, dt)
+        b = Bee(env, sense_range, dt, kappa_0, alpha, beta, w_dir)
         env.add_bee(b)
 
     t = 0
