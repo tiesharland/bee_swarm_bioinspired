@@ -124,7 +124,7 @@ class Environment:
 
 
 class Bee:
-    def __init__(self, environment, sense_range, dt, kappa_0, alpha, beta, w_dir, w_rep, scout=False):
+    def __init__(self, environment, sense_range, dt, kappa_0, alpha, beta, w_dir, scout=False):
         self.env = environment
         self.sense_range = sense_range
         self.dt = dt
@@ -132,7 +132,7 @@ class Bee:
         self.alpha = alpha
         self.beta = beta
         self.w_dir = w_dir
-        self.w_rep = w_rep
+        self.w_rep = 1 - w_dir
         self.scout = scout
         self.position = self.env.hive_position
         self.state = "home"
