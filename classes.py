@@ -7,29 +7,40 @@ import matplotlib.animation as animation
 
 
 class Environment:
-    def __init__(self, width, length, hive_radius, nectar_count, max_nec_strength, idle_prob, follow_prob):
+    def __init__(self, width, length, hive_radius, nectar_count, max_nec_strength, idle_prob, follow_prob,
+                 max_st, hive_pos, seed=None):
         self.width = width
         self.length = length
         self.hive_radius = hive_radius
         self.max_nec_strength = max_nec_strength
         self.idle_prob = idle_prob
         self.follow_prob = follow_prob
-        self.nectars = self.place_nectar(nectar_count)
-        self.hive_position = self.place_hive()
+        self.nectars = self.place_nectar(nectar_count, max_st, seed)
+        self.hive_position = self.place_hive(hive_pos)
         self.bees = []
         self.dances = []
         self.history = []
 
-    def place_nectar(self, num):
+    def place_nectar(self, num, max_st, seed):
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = np.random.default_rng()
         nectars = []
         for n in range(num):
             x = np.random.uniform(0, self.length)
             y = np.random.uniform(0, self.width)
-            nectars.append({'position': (x, y), 'strength': np.random.randint(1, self.max_nec_strength + 1)})
+            stren = (self.max_nec_strength if max_st else np.random.randint(1, self.max_nec_strength + 1))
+            nectars.append({'position': (x, y), 'strength': stren})
         return nectars
 
-    def place_hive(self):
-        return np.random.uniform(0, self.length), np.random.uniform(0, self.width)
+    def place_hive(self, hive_pos):
+        if hive_pos == 'centre':
+            return self.length/2, self.width/2
+        elif hive_pos == 'random':
+            return np.random.uniform(0, self.length), np.random.uniform(0, self.width)
+        else:
+            ValueError(f'Not valid hive position: {hive_pos} should be "centre" or "random"')
 
     def add_bee(self, bee):
         self.bees.append(bee)

@@ -1,9 +1,10 @@
 from classes import *
 
 
-def run(inpt, vis=True, max_steps=True):
+def run(inpt, vis=True, max_steps=False, seed=None):
     env = Environment(inpt['width'], inpt['length'], inpt['hive_radius'], inpt['nectar_count'],
-                      inpt['max_nec_strength'], inpt['idle_prob'], inpt['follow_prob'])
+                      inpt['max_nec_strength'], inpt['idle_prob'], inpt['follow_prob'],
+                      max_st=True, hive_pos='centre', seed=seed)
     num_scouts = int(inpt['num_bees'] * inpt['perc_scouts'])
     for i in range(inpt['num_bees']):
         sc = i < num_scouts
@@ -52,17 +53,17 @@ if __name__ == '__main__':
         'num_bees': 10,
         'dt': 0.2,
         'max_steps': 10000,
-        # behavioural defaults:
-        'idle_prob': 0.2,
-        'follow_prob': 0.5,
-        'perc_scouts': 0.3,
         'sense_range': 0.5,
+        # behavioural defaults:
+        'idle_prob': 0.25,
+        'follow_prob': 1.0,
+        'perc_scouts': 0.9,
         # movement params (for kappa etc)
-        'kappa_0': 10,
-        'alpha': 10,
-        'beta': 20,
-        'w_dir': 0.5
+        'kappa_0': 1.0,
+        'alpha': 50.0,
+        'beta': 5,
+        'w_dir': 1.0
     }
 
-    results = run(inp)
+    results = run(inp, vis=True, max_steps=True, seed=63)
     print(results)

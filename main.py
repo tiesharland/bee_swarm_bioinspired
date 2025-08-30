@@ -1,30 +1,42 @@
+# import pandas as pd
+# from testing import default_params, param_ranges, params_of_interest
+#
+#
+# df = pd.read_csv("pairwise_sensitivity_results.csv")
+# subset_defaults = {k: default_params[k] for k in params_of_interest}
+#
+# # Fill NaNs with default parameter values
+# for k, v in subset_defaults.items():
+#     df[k] = df[k].fillna(v)
+#
+# df.to_csv("pairwise_sensitivity_results.csv", index=False)
+# Drop rows where time_to_depletion is NaN (unsuccessful runs)
+# df_valid = df.dropna(subset=["time_to_depletion"])
+#
+# # Find the row with the minimum completion time
+# fastest_row = df_valid.loc[df_valid["time_to_depletion"].idxmin()]
+#
+# print("Fastest run:")
+# print(fastest_row)
+
+import pandas as pd
 import numpy as np
-from run import run
 
+# Load CSV
+df = pd.read_csv("pairwise_sensitivity_results.csv")
 
-num_runs = 100
-range_follow_prob = np.arange(0.5, 0.8, 10)
-range_idle_prob = np.arange(0.1, 0.5, 10)
-range_num_bees = 20
-range_num_nectar = 10
+# Only successful runs
+df_valid = df[df["success"] == True].copy()
 
-for f in range_follow_prob:
-    for i in range_idle_prob:
-        for b in range_num_bees:
-            for n in range_num_nectar:
-                inp = dict()
-                inp['width'] = 4
-                inp['length'] = 4
-                inp['hive_radius'] = 0.2
-                inp['max_nec_strength'] = 50
-                inp['idle_prob'] = i
-                inp['follow_prob'] = f
-                inp['nectar_count'] = n
-                inp['num_bees'] = b
-                inp['sense_range'] = .5
-                inp['dt'] = 0.1
-                inp['n_time_steps'] = 1000
-                inp['max_steps'] = 5000
+# Group by parameter set
+param_cols = [c for c in df_valid.columns if c not in ["rep", "success", "time_to_depletion"]]
+stats_df = df_valid.groupby(param_cols)["time_to_depletion"].agg(['mean', 'std']).reset_index()
 
-                run(inp)
+# Replace NaN std with 0
+stats_df['std'] = stats_df['std'].fillna(0)
 
+# Top 5 fastest average depletion
+top5 = stats_df.sort_values('mean').head(5)
+
+print("Top 5 parameter sets (fastest average depletion) with std:")
+print(top5)
