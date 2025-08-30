@@ -1,105 +1,146 @@
+import itertools
 import numpy as np
 import pandas as pd
-import itertools
-from joblib import Parallel, delayed
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 import seaborn as sns
+from multiprocessing import Pool, cpu_count
+
 from classes import *
-from run import run
+from run import run  # your modified run() with fixed hive
 
-# === Simulation wrapper with seed control ===
-def run_simulation(params: dict, seed: int) -> dict:
-    np.random.seed(seed)
-    return run(params, vis=False, max_steps=False)
+# ==== DEFAULT PARAMETERS ====
+default_params = {
+    'width': 10,
+    'length': 10,
+    'hive_radius': 0.2,
+    'nectar_count': 15,
+    'max_nec_strength': 5,
+    'num_bees': 10,
+    'dt': 0.2,
+    'max_steps': 50000,
+    'idle_prob': 0.2,
+    'follow_prob': 0.5,
+    'perc_scouts': 0.3,
+    'sense_range': 0.5,  # fixed
+    'kappa_0': 10,
+    'alpha': 10,
+    'beta': 20,
+    'w_dir': 0.5,
+}
 
+# ==== PARAMETER RANGES (sense_range removed) ====
+param_ranges = {
+    'idle_prob':    np.linspace(0.0, 0.5, 5),
+    'follow_prob':  np.linspace(0.0, 1.0, 5),
+    'perc_scouts':  np.linspace(0.1, 0.9, 5),
+    'kappa_0':      [1, 5, 10, 20, 50],
+    'alpha':        [1, 5, 10, 20, 50],
+    'beta':         [1, 5, 10, 20, 50],
+    'w_dir':        np.linspace(0.0, 1.0, 5),
+}
 
-# === Experiment grid runner ===
-def grid_experiment(base_params, p_name, q_name, p_vals, q_vals, R=5, n_jobs=-1):
-    """
-    Run a grid of experiments varying p_name and q_name.
-    Each (p, q) pair is replicated R times with different seeds.
-    """
-    tasks = []
-    for p, q in itertools.product(p_vals, q_vals):
-        for r in range(R):
-            params = base_params.copy()
-            params[p_name] = p
-            params[q_name] = q
-            tasks.append((params, p, q, r))
+params_of_interest = list(param_ranges.keys())
+pairs = list(itertools.combinations(params_of_interest, 2))
 
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(run_one)(params, p, q, r, p_name, q_name)
-        for (params, p, q, r) in tqdm(tasks, desc="Running simulations")
-    )
+# ==== SINGLE SIMULATION ====
+def run_single_sim(params, p_name, q_name, p_val, q_val, rep):
+    params_copy = params.copy()
+    params_copy[p_name] = float(p_val)
+    params_copy[q_name] = float(q_val)
+    out = run(params_copy, vis=False, max_steps=True, seed=63)
 
-    df = pd.DataFrame(results)
-    return df
+    # Fill ALL parameters explicitly
+    for k, v in params.items():
+        if k not in out:
+            out[k] = v
 
+    # Overwrite varied ones
+    out[p_name] = p_val
+    out[q_name] = q_val
+    out["rep"] = rep
+    return out
 
-def run_one(params, p, q, r, p_name, q_name):
-    res = run_simulation(params, seed=r)
-    res.update({ p_name: p, q_name: q, "rep": r })
-    return res
+# Wrapper for multiprocessing
+def run_single_sim_wrapper(args):
+    return run_single_sim(*args)
 
+# ==== PARALLEL GRID RUN ====
+def run_grid_parallel(p_name, q_name, n_reps=5):
+    results = []
+    tasks = [(default_params, p_name, q_name, p_val, q_val, rep)
+             for p_val in param_ranges[p_name]
+             for q_val in param_ranges[q_name]
+             for rep in range(n_reps)]
 
-# === Summarizing ===
-def summarize_grid(df, p_name, q_name, metric='time_to_depletion'):
-    pivot_mean = df.pivot_table(values=metric, index=q_name, columns=p_name, aggfunc='mean')
-    pivot_std = df.pivot_table(values=metric, index=q_name, columns=p_name, aggfunc='std')
-    return pivot_mean, pivot_std
+    with Pool(processes=cpu_count()) as pool:
+        for out in tqdm(pool.imap_unordered(run_single_sim_wrapper, tasks),
+                        total=len(tasks),
+                        desc=f"Sweeping {p_name} vs {q_name}",
+                        ncols=100):
+            results.append(out)
 
+    return pd.DataFrame(results)
 
-# === Visualization ===
-def plot_heatmap(pivot, p_vals, q_vals, p_name, q_name, title=None):
-    plt.figure(figsize=(8, 6))
-    sns.heatmap(pivot, xticklabels=np.round(p_vals, 2), yticklabels=np.round(q_vals, 2),
-                cmap="viridis", annot=True, fmt=".1f")
-    plt.xlabel(p_name)
-    plt.ylabel(q_name)
-    if title:
-        plt.title(title)
-    plt.show()
+# ==== SUMMARIZE RESULTS ====
+def summarize_grid(df, p_name, q_name):
+    p_vals = param_ranges[p_name]
+    q_vals = param_ranges[q_name]
 
+    success_pivot = df.pivot_table(
+        values="success",
+        index=q_name,
+        columns=p_name,
+        aggfunc="mean"
+    ).reindex(index=q_vals, columns=p_vals, fill_value=0)
 
-# === Example run ===
+    df_success = df[df["success"] == True]
+
+    mean_time = df_success.pivot_table(
+        values="time_to_depletion",
+        index=q_name,
+        columns=p_name,
+        aggfunc="mean"
+    ).reindex(index=q_vals, columns=p_vals, fill_value=0)
+
+    std_time = df_success.pivot_table(
+        values="time_to_depletion",
+        index=q_name,
+        columns=p_name,
+        aggfunc="std"
+    ).reindex(index=q_vals, columns=p_vals, fill_value=0)
+
+    return success_pivot, mean_time, std_time
+
+# ==== PLOTTING ====
+def create_heatmap(pivot, p_name, q_name, title, cmap="viridis"):
+    fig, ax = plt.subplots(figsize=(7, 6))
+    sns.heatmap(pivot, annot=True, fmt=".2f", cmap=cmap, ax=ax)
+    ax.set_xticklabels([f"{x:.2f}" for x in pivot.columns], rotation=45)
+    ax.set_yticklabels([f"{y:.2f}" for y in pivot.index], rotation=0)
+    ax.set_title(title)
+    ax.set_xlabel(p_name)
+    ax.set_ylabel(q_name)
+    return fig
+
+# ==== MAIN LOOP ====
 if __name__ == "__main__":
-    base_params = {
-        'width': 10,
-        'length': 10,
-        'hive_radius': 0.2,
-        'nectar_count': 15,
-        'max_nec_strength': 5,
-        'num_bees': 10,
-        'dt': 0.2,
-        'max_steps': 5000,
-        # behavioural
-        'idle_prob': 0.2,
-        'follow_prob': 0.5,
-        'perc_scouts': 0.3,
-        'sense_range': 0.5,
-        # movement
-        'kappa_0': 10,
-        'alpha': 10,
-        'beta': 20,
-        'w_dir': 0.5
-    }
+    all_results = []
+    all_figures = []
 
-    # Choose which two parameters to vary
-    p_name = 'idle_prob'
-    q_name = 'follow_prob'
-    p_vals = np.linspace(0.05, 0.5, 5)
-    q_vals = np.linspace(0.1, 0.9, 5)
+    for p_name, q_name in tqdm(pairs, desc="All parameter pairs", ncols=100):
+        df = run_grid_parallel(p_name, q_name, n_reps=5)
+        all_results.append(df)
 
-    # Run experiments
-    df = grid_experiment(base_params, p_name, q_name, p_vals, q_vals, R=10, n_jobs=4)
-    print("Finished simulations!")
-    print(df.head())
+        success, mean_time, std_time = summarize_grid(df, p_name, q_name)
 
-    # Summarize
-    pivot_mean, pivot_std = summarize_grid(df, p_name, q_name, metric='time_to_depletion')
+        # all_figures.append(create_heatmap(success, p_name, q_name, f"Success rate: {p_name} vs {q_name}"))
+        all_figures.append(create_heatmap(mean_time, p_name, q_name, f"Mean time-to-depletion: {p_name} vs {q_name}"))
+        all_figures.append(create_heatmap(std_time, p_name, q_name, f"Std time-to-depletion: {p_name} vs {q_name}"))
 
-    # Plot
-    plot_heatmap(pivot_mean, p_vals, q_vals, p_name, q_name,
-                 title="Mean time to depletion")
+    final_df = pd.concat(all_results, ignore_index=True)
+    final_df.to_csv("pairwise_sensitivity_results.csv", index=False)
+    print("Saved results to pairwise_sensitivity_results.csv")
+
+    plt.show()
 
